@@ -34,15 +34,26 @@ from openai import OpenAI
 import logging
 import time
 
-logging.basicConfig(level=logging.INFO,
-                    format="%(asctime)s [%(levelname)s] %(message)s",
-                    datefmt="%Y-%m-%d %H:%M:%S",
-                    handlers=[
-                        logging.FileHandler("s01.log"),
-                        logging.StreamHandler()
-                    ])
 log = logging.getLogger("s01-agent")
-# log.setLevel(logging.DEBUG)
+log.setLevel(logging.DEBUG)          # 只打开你自己的 logger
+log.propagate = False                # 不再向 root logger 传递
+
+formatter = logging.Formatter(
+    "%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
+
+file_handler = logging.FileHandler("s01.log", encoding="utf-8")
+file_handler.setLevel(logging.DEBUG)
+file_handler.setFormatter(formatter)
+
+stream_handler = logging.StreamHandler()
+stream_handler.setLevel(logging.INFO)
+stream_handler.setFormatter(formatter)
+
+log.handlers.clear()
+log.addHandler(file_handler)
+log.addHandler(stream_handler)
 
 log.info("--加载环境变量--")
 env_file = Path(__file__).parent.parent/".env"
