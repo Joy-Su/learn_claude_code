@@ -22,32 +22,66 @@ while stop_reason == "tool_use":
     这是最核心的循环，将工具运行的结果返回给模型直到模型决定停止。生产环境智能体层，再叠加策略、钩子、生命周期控制。
 """
 import os
+from idlelib.pyshell import usage_msg
 
-import subprocess
 from dotenv import load_dotenv
+import subprocess
+from pathlib import Path
+import json
+
 from openai import OpenAI
 
-load_dotenv()
+import logging
+import time
+
+logging.basicConfig(level=logging.INFO,
+                    format="%(asctime)s [%(levelname)s] %(message)s",
+                    datefmt="%Y-%m-%d %H:%M:%S",
+                    handlers=[
+                        logging.FileHandler("s01.log"),
+                        logging.StreamHandler()
+                    ])
+log = logging.getLogger("s01-agent")
+# log.setLevel(logging.DEBUG)
+
+log.info("--加载环境变量--")
+env_file = Path(__file__).parent.parent/".env"
+load_dotenv(dotenv_path=env_file)
 pwd = os.getcwd()
 model_name = os.getenv("MODEL_NAME")
+log.info("--环境变量加载成功--")
 
 client = OpenAI(base_url=os.getenv("BASE_URL"), api_key=os.getenv("API_KEY"))
 
-SYSTEM = f"你是一个位于:{pwd}的coding Agent。使用bash来解决任务，行动，不需要解释。"
+SYSTEM = f"你是一个位于:'{pwd}' 的coding Agent。使用Windows 的CMD来解决任务，行动，不需要解释。"
 
-TOOLS = [{"name": "bash", "description": "Run a shell command.", "input_schema": {
-    "type": "object",
-    "properties": {"command": {"type": "string"}},
-    "required": ["command"]},}]
+TOOLS = [{
+    "type": "function",
+    "function":  {
+        "name": "bash",
+        "description": "Run a shell command.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "The shell command to execute."
+                }
+            }
+        }
+    }
+}]
 
 def run_bash(command: str) -> str:
     dangerous = ["rm -rf /", "sudo", "shutdown", "reboot", "> /dev/"]
     if any(d in command for d in dangerous):
         return "Error: Dangerous command blocked"
     try:
+        log.info("--开始调用工具bash--")
         r = subprocess.run(command, shell=True, cwd=pwd, capture_output=True, text=True, timeout=120)
         out = (r.stdout + r.stderr).strip()
-        return out[:50000] if out else "(no output)"
+        log.info("--bash tool调用成功--")
+        return out[:50000] if out else "运行成功！"
     except subprocess.TimeoutExpired:
         return "Error: Timeout(120s)"
     except (FileNotFoundError, OSError) as e:
@@ -55,27 +89,48 @@ def run_bash(command: str) -> str:
 
 # 核心模式：一个agent loop，一直调用工具直到模型停止
 def agent_loop(messages: list):
+    start = time.time()
     system_msg = [{"role":"system" ,"content": SYSTEM}]
-    all_msg = system_msg+messages
+    usage_msg = 0
+
     while True:
+        all_msg = system_msg + messages
+        log.debug(f"查看会话历史: {all_msg}")
+        log.info("--开始进行大模型请求--")
         response = client.chat.completions.create(model=os.getenv("MODEL_NAME"),
                                            messages=all_msg,
+                                           tools=TOOLS
                                                   )
+        usage_msg += response.usage.total_tokens
         # response = response.model_dump_json() # 这个response是openai返回的对象，要用这个方法解析成json字符串，我们可看懂
-        print(f"----输出response:{response.model_dump_json()}")
+        log.debug(f"----本轮模型输出:{response.model_dump_json()}")
         content = response.choices[0].message
-        messages.append({"role": "assistant", "content": content})
+        messages.append({"role": "assistant", "content": content.content})
+        if content.content:
+            log.info(f"AI回复: {content.content}")
+        else:
+            log.info("AI正在调用工具")
         # 如果模型未调用工具，则视为完成任务。
         if response.choices[0].finish_reason != "tool_calls":
+            end = time.time()
+            log.info(f"本轮回复共耗时{end-start}s.")
+            log.info(f"本轮回复共消费{usage_msg}个token.")
+
             return
-        results = []
-        for block in response.content:
-            if block.type == "tool_use":
-                print(f"{block.input['command']}")
-                output = run_bash(block.input['command'])
-                results.append({"type": "tool_result", "tool_use_id": block.id,
+        tool_results = []
+        for block in response.choices:
+            if block.finish_reason == "tool_calls":
+                for tool_call in block.message.tool_calls:
+                    arg = json.loads(tool_call.function.arguments)
+
+                    log.debug(f"工具调用参数:{arg['command']}")
+
+                    output = run_bash(arg['command'])
+                    log.debug(f"工具调用结果:{output}")
+                    tool_results.append({"role": "tool", "tool_call_id": tool_call.id,
                                 "content": output})
-        messages.append({"role": "user", "content": results})
+        messages.extend(tool_results)
+
 
 if __name__ == "__main__":
     history = []
@@ -85,6 +140,7 @@ if __name__ == "__main__":
         except (EOFError, KeyboardInterrupt):
             break
         if query.strip().lower() in ("q", "exit", ""):
+            log.info("---安全退出---")
             break
         history.append({"role": "user", "content": query})
         agent_loop(history)
