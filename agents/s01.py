@@ -22,7 +22,6 @@ while stop_reason == "tool_use":
     这是最核心的循环，将工具运行的结果返回给模型直到模型决定停止。生产环境智能体层，再叠加策略、钩子、生命周期控制。
 """
 import os
-from idlelib.pyshell import usage_msg
 
 from dotenv import load_dotenv
 import subprocess
@@ -84,7 +83,13 @@ TOOLS = [{
 }]
 
 def run_bash(command: str) -> str:
-    dangerous = ["rm -rf /", "sudo", "shutdown", "reboot", "> /dev/"]
+    dangerous = [
+        "rd /s /q C:\\",  # 对应 rm -rf /（删C盘根目录）
+        "runas /user:administrator",  # 对应 sudo（管理员提权）
+        "shutdown /s /f",  # 对应 shutdown（强制关机）
+        "shutdown /r /f",  # 对应 reboot（强制重启）
+        "nul", "> nul"  # 对应 > /dev/null（空设备，常被恶意利用）
+    ]
     if any(d in command for d in dangerous):
         return "Error: Dangerous command blocked"
     try:
