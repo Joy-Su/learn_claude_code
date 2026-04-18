@@ -84,13 +84,23 @@ TOOLS = [{
 
 def run_bash(command: str) -> str:
     dangerous = [
-        "rd /s /q C:\\",  # 对应 rm -rf /（删C盘根目录）
-        "runas /user:administrator",  # 对应 sudo（管理员提权）
-        "shutdown /s /f",  # 对应 shutdown（强制关机）
-        "shutdown /r /f",  # 对应 reboot（强制重启）
-        "nul", "> nul"  # 对应 > /dev/null（空设备，常被恶意利用）
+        "del ",
+        "erase ",
+        "rd",
+        "rmdir ",
+        "format ",
+        "shutdown ",
+        "taskkill ",
+        "reg delete",
+        "reg add",
+        "net user",
+        "net localgroup",
+        "sc delete",
+        "powershell ",
+        "curl ",
+        "certutil ",
     ]
-    if any(d in command for d in dangerous):
+    if any(d in command.lower() for d in dangerous):
         return "Error: Dangerous command blocked"
     try:
         log.info("--开始调用工具bash--")

@@ -15,6 +15,7 @@
 """
 
 import os
+from importlib.metadata import requires
 
 from dotenv import load_dotenv
 import subprocess
@@ -74,13 +75,23 @@ def safe_path(p: str) -> str:
 
 def run_bash(command: str) -> str:
     dangerous = [
-        "rd /s /q C:\\",  # 对应 rm -rf /（删C盘根目录）
-        "runas /user:administrator",  # 对应 sudo（管理员提权）
-        "shutdown /s /f",  # 对应 shutdown（强制关机）
-        "shutdown /r /f",  # 对应 reboot（强制重启）
-        "nul", "> nul"  # 对应 > /dev/null（空设备，常被恶意利用）
+        "del ",
+        "erase ",
+        "rd",
+        "rmdir ",
+        "format ",
+        "shutdown ",
+        "taskkill ",
+        "reg delete",
+        "reg add",
+        "net user",
+        "net localgroup",
+        "sc delete",
+        "powershell ",
+        "curl ",
+        "certutil ",
     ]
-    if any(d in command for d in dangerous):
+    if any(d in command.lower() for d in dangerous):
         return "Error: 危险指令已被屏蔽"
     try:
         r = subprocess.run(command, shell=True, cwd=WORKDIR,
@@ -92,7 +103,130 @@ def run_bash(command: str) -> str:
 
 def run_read(path:str, limit: int = None) -> str:
     try:
-        text = safe_path(path).read_text()
+        text = safe_path(path).read_text() #读文件
         lines = text.splitlines()
-        # if limit and limit < len(lines):
-        #     lines =
+        if limit and limit < len(lines):
+            lines = lines[:limit] + [f"....省略({len(lines)-limit})行"]
+        return "\n".join(lines)[:50000]
+    except Exception as e:
+        return f"Error: {e}"
+
+def run_write(path: str, content:str) -> str:
+    try:
+        fp = safe_path(path)
+        fp.parent.mkdir(parents=True, exist_ok=True)
+        fp.write_text(content)
+        return f"已将{len(content)}个字节存入{path}"
+    except Exception as e:
+        return f"Error: {e}"
+
+def run_edit(path: str, old_text: str, new_text: str) -> str:
+    try:
+        fp = safe_path(path)
+        content = fp.read_text()
+        if old_text not in content:
+            return f"Error: {path}中未找到文本"
+        fp.write_text(content.replace(old_text, new_text, 1))
+        return f"{path}已被编辑"
+    except Exception as e:
+        return f"Error: {e}"
+
+# 映射字典： {tool_name: handler}
+TOOL_HANDLERS = {
+    "bash": lambda **kw: run_bash(kw["command"]),
+    "read_file": lambda **kw: run_read(kw["path"], kw.get["limit"]),
+    "write_file": lambda **kw: run_write(kw["path"], kw["content"]),
+    "edit_file": lambda **kw: run_edit(kw["path"], kw["old_text"], kw["new_text"])
+}
+
+TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "bash",
+            "description": "Run a shell command.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "The path to exeucte command shell."
+                    }
+                },
+                "required": ["command"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_file",
+            "description": "read file content.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "The path to read content."
+                    },
+                    "limit":{
+                        "type": "integer",
+                        "description": "The number of contents to read."
+                    }
+
+                },
+                "required": ["path"]
+            }
+        }
+    },
+{
+        "type": "function",
+        "function": {
+            "name": "write_file",
+            "description": "write file content.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "The path to write content."
+                    },
+                    "content":{
+                        "type": "string",
+                        "description": "The contents to write."
+                    }
+
+                },
+                "required": ["path", "content"]
+            }
+        }
+    },
+{
+        "type": "function",
+        "function": {
+            "name": "edit_file",
+            "description": "edit file content.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "The path to edit file content."
+                    },
+                    "old_text":{
+                        "type": "string",
+                        "description": "The old_text to be replaced."
+                    },
+                    "new_text": {
+                        "type": "string",
+                        "description": "The new_text to replace old_text."
+                    }
+
+                },
+                "required": ["path", "old_text", "new_text"]
+            }
+        }
+    }
+]
+
+
