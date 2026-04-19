@@ -161,6 +161,7 @@ def agent_loop(messages: list):
 if __name__ == "__main__":
     history = []
     while True:
+        # history = []
         try:
             query = input("请输入:")
         except (EOFError, KeyboardInterrupt):
@@ -170,9 +171,4 @@ if __name__ == "__main__":
             break
         history.append({"role": "user", "content": query})
         agent_loop(history)
-        response_content = history[-1]["content"]
-        if isinstance(response_content, list):
-            for block in response_content:
-                if hasattr(block, "text"):
-                    print(block.text)
-        print()
+        print(f'对话历史hisotry:{history}')
