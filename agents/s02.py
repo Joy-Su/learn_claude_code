@@ -40,6 +40,14 @@ file_handler = logging.FileHandler("s02.log", encoding="utf-8")
 file_handler.setLevel(logging.DEBUG)
 file_handler.setFormatter(formatter)
 
+stream_handler = logging.StreamHandler()
+stream_handler.setLevel(logging.DEBUG)
+stream_handler.setFormatter(formatter)
+
+log.handlers.clear()
+log.addHandler(file_handler)
+log.addHandler(stream_handler)
+
 log.info("--")
 env_file = Path(__file__).parent.parent/".env"
 load_dotenv(dotenv_path=env_file)
@@ -50,24 +58,8 @@ client = OpenAI(base_url=os.getenv("BASE_URL"), api_key=os.getenv("API_KEY"))
 
 SYSTEM = f"你是一个位于:'{WORKDIR}' 的coding Agent。使用Windows 的CMD来解决任务，行动，不需要解释。"
 
-TOOLS = [{
-    "type": "function",
-    "function":  {
-        "name": "bash",
-        "description": "Run a shell command.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "command": {
-                    "type": "string",
-                    "description": "The shell command to execute."
-                }
-            }
-        }
-    }
-}]
 
-def safe_path(p: str) -> str:
+def safe_path(p: str) -> Path:
     path = (WORKDIR / p).resolve()
     if not path.is_relative_to(WORKDIR):
         raise ValueError(f"与路径:{p}发生偏移")
@@ -228,5 +220,48 @@ TOOLS = [
         }
     }
 ]
+
+def agent_loop(messages: list):
+    system_msg = [{"role": "system", "content": SYSTEM}]
+    while True:
+        all_msg = system_msg + messages
+        response = client.chat.completions.create(model=os.getenv("MODEL_NAME"),
+                                                  messages=all_msg,
+                                                  tools=TOOLS)
+        log.debug(f"本轮模型的response输出：{response.model_dump_json()}")
+        content = response.choices[0].message
+        messages.append({"role": "assistant", "content": content.content})
+        if content.content:
+            log.info(f"AI回复: {content.content}")
+        else:
+            log.info("AI正在调用工具")
+
+        if response.choices[0].finish_reason != "tool_calls":
+            return
+        tool_results = []
+        for block in response.choices:
+            if block.finish_reason == "tool_calls":
+                for tool_call in block.message.tool_calls:
+                    print("?????????")
+                    handler = TOOL_HANDLERS.get(tool_call.function.name)
+                    arg = json.loads(tool_call.function.arguments)
+                    output = handler(**arg) if handler else f"未知工具: {handler}"
+                    log.debug(f"调用工具{handler}，工具调用参数:{arg}")
+                    log.debug(f"工具调用结果：{output}")
+                    tool_results.append({"role": "tool", "tool_call_id": tool_call.id, "content": output})
+        messages.extend(tool_results)
+
+if __name__ == "__main__":
+    history = []
+    while True:
+        try:
+            query = input("请输入: ")
+        except (EOFError, KeyboardInterrupt):
+            break
+        if query.strip().lower() in ("q", "quit", ""):
+            log.info("--安全退出--")
+            break
+        history.append({"role": "user", "content": query})
+        agent_loop(history)
 
 
