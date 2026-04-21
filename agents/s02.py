@@ -126,7 +126,7 @@ def run_edit(path: str, old_text: str, new_text: str) -> str:
 # 映射字典： {tool_name: handler}
 TOOL_HANDLERS = {
     "bash": lambda **kw: run_bash(kw["command"]),
-    "read_file": lambda **kw: run_read(kw["path"], kw.get["limit"]),
+    "read_file": lambda **kw: run_read(kw["path"], kw.get("limit")),
     "write_file": lambda **kw: run_write(kw["path"], kw["content"]),
     "edit_file": lambda **kw: run_edit(kw["path"], kw["old_text"], kw["new_text"])
 }
@@ -221,38 +221,43 @@ TOOLS = [
     }
 ]
 
-def agent_loop(messages: list):
+def agent_loop(messages: list, total_usage: int) -> int:
     system_msg = [{"role": "system", "content": SYSTEM}]
+    usage_msg = 0
     while True:
         all_msg = system_msg + messages
         response = client.chat.completions.create(model=os.getenv("MODEL_NAME"),
                                                   messages=all_msg,
                                                   tools=TOOLS)
+        usage_msg += response.usage.total_tokens
+        total_usage += response.usage.total_tokens
         log.debug(f"本轮模型的response输出：{response.model_dump_json()}")
         content = response.choices[0].message
         messages.append({"role": "assistant", "content": content.content})
         if content.content:
             log.info(f"AI回复: {content.content}")
+            log.info(f"本轮回复共消耗{usage_msg}个token.")
+            log.info(f"截止目前共消耗{total_usage}个token.")
         else:
             log.info("AI正在调用工具")
 
         if response.choices[0].finish_reason != "tool_calls":
-            return
+            return total_usage
         tool_results = []
         for block in response.choices:
             if block.finish_reason == "tool_calls":
                 for tool_call in block.message.tool_calls:
-                    print("?????????")
                     handler = TOOL_HANDLERS.get(tool_call.function.name)
                     arg = json.loads(tool_call.function.arguments)
                     output = handler(**arg) if handler else f"未知工具: {handler}"
-                    log.debug(f"调用工具{handler}，工具调用参数:{arg}")
+                    log.debug(f"调用工具:{tool_call.function.name}，工具调用参数:{arg}")
                     log.debug(f"工具调用结果：{output}")
                     tool_results.append({"role": "tool", "tool_call_id": tool_call.id, "content": output})
         messages.extend(tool_results)
 
 if __name__ == "__main__":
     history = []
+    total_usage_va = 0
     while True:
         try:
             query = input("请输入: ")
@@ -262,6 +267,6 @@ if __name__ == "__main__":
             log.info("--安全退出--")
             break
         history.append({"role": "user", "content": query})
-        agent_loop(history)
+        total_usage_va = agent_loop(history, total_usage_va)
 
 
