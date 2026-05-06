@@ -27,7 +27,7 @@ from openai import OpenAI
 import logging
 import time
 
-log = logging.getLogger("s01-agent")
+log = logging.getLogger("s02-agent")
 log.setLevel(logging.DEBUG)          # 只打开你自己的 logger
 log.propagate = False                # 不再向 root logger 传递
 
@@ -142,7 +142,7 @@ TOOLS = [
                 "properties": {
                     "command": {
                         "type": "string",
-                        "description": "The path to exeucte command shell."
+                        "description": "The command to run."
                     }
                 },
                 "required": ["command"]
@@ -253,6 +253,8 @@ def agent_loop(messages: list, total_usage: int) -> int:
                     log.debug(f"调用工具:{tool_call.function.name}，工具调用参数:{arg}")
                     log.debug(f"工具调用结果：{output}")
                     tool_results.append({"role": "tool", "tool_call_id": tool_call.id, "content": output})
+
+
         messages.extend(tool_results)
 
 if __name__ == "__main__":
