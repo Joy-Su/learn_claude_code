@@ -1,5 +1,4 @@
-#!/usr/bin/env python3
-# Harness: planning -- keeping the model on course without scripting the route.
+# Harness: planning -- 把控模型前进方向，但是不预设前进路径
 """
 s03_todo_write.py - TodoWrite
 
@@ -8,7 +7,7 @@ forces it to keep updating when it forgets.
 
     +----------+      +-------+      +---------+
     |   User   | ---> |  LLM  | ---> | Tools   |
-    |  prompt  |      |       |      | + todolist  |
+    |  prompt  |      |       |      | + todo  |
     +----------+      +---+---+      +----+----+
                           ^               |
                           |   tool_result |
@@ -24,7 +23,7 @@ forces it to keep updating when it forgets.
                     if rounds_since_todo >= 3:
                       inject <reminder>
 
-Key insight: "The agent can track its own progress -- and I can see it."
+Key insight: Agent能够自行追踪任务状态，我也能够实时查看进度状态。
 """
 
 import os
